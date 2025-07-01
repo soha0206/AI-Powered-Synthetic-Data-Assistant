@@ -44,11 +44,11 @@ genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 logger.debug("Gemini model configured successfully")
 
-# Initialize SentenceTransformer for embeddings
-embedder = SentenceTransformer('all-MiniLM-L6-v2')
+# Initialize SentenceTransformer for embeddings - Using a very lightweight model
+embedder = SentenceTransformer('paraphrase-MiniLM-L3-v2')  # ~30-40 MB
 
-# Load Hugging Face model locally
-text_generator = pipeline("text-generation", model="distilgpt2")
+# Load Hugging Face model locally - Using a very lightweight model
+text_generator = pipeline("text-generation", model="tiny-gpt2")  # ~10-20 MB
 
 # Initialize Faker
 fake = Faker()
@@ -149,6 +149,7 @@ def clean_dataset(filepath):
     logger.debug(f"Saved vector store to {vector_store_path} with {len(chunks)} chunks")
 
     return cleaned_filepath, cleaned_df.head().to_dict('records')
+
 def generate_sql_schema(filepath):
     # Read the CSV file
     df = pd.read_csv(filepath, encoding='utf-8')
@@ -307,6 +308,7 @@ def generate_sql_schema(filepath):
         conn.close()
 
     return ai_generated_schema
+
 def query_dataset(query, filename, vector_db_folder='vector_db'):
     try:
         # Load the precomputed vector store
@@ -538,7 +540,6 @@ def generate_dataset():
 def confirm_generate():
     # This route is now redundant since generation is handled in /generate
     return redirect(url_for('generate_dataset'))
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000)
