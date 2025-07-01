@@ -15,6 +15,8 @@ from faker import Faker
 from transformers import pipeline
 import random
 import uuid
+import json
+import re
 
 app = Flask(__name__)
 
@@ -37,7 +39,7 @@ os.makedirs(CLEANED_FOLDER, exist_ok=True)
 os.makedirs(VECTOR_DB_FOLDER, exist_ok=True)
 
 # Configure Gemini API
-API_KEY = "AIzaSyBhQJfK5GKjZjpMGKssnAatiQiWwEjUBco"
+API_KEY = "AIzaSyDa08tT7hax2OAc2iMMFQuinnaFRRO62ro"
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 logger.debug("Gemini model configured successfully")
@@ -147,44 +149,146 @@ def clean_dataset(filepath):
     logger.debug(f"Saved vector store to {vector_store_path} with {len(chunks)} chunks")
 
     return cleaned_filepath, cleaned_df.head().to_dict('records')
-
 def generate_sql_schema(filepath):
+    # Read the CSV file
     df = pd.read_csv(filepath, encoding='utf-8')
-    table_name = 'dataset'
-    schema = [f"CREATE TABLE {table_name} ("]
-    schema.append("    id INTEGER PRIMARY KEY AUTOINCREMENT,")
-
-    dtype_mapping = {
-        'object': 'TEXT',
-        'int64': 'INTEGER',
-        'float64': 'REAL',
-        'datetime64[ns]': 'DATE'
-    }
-
-    quoted_columns = [f'"{col}"' for col in df.columns]
-    for column in df.columns:
-        dtype = str(df[column].dtype)
-        sql_type = dtype_mapping.get(dtype, 'TEXT')
-        if 'date' in column.lower():
-            sql_type = 'DATE'
-        null_constraint = ''
-        schema.append(f'    "{column}" {sql_type}{null_constraint},')
     
-    schema[-1] = schema[-1].rstrip(',')
-    schema.append(");")
-    sql_schema = '\n'.join(schema)
+    # Prepare a summary of the dataset for AI analysis
+    column_summaries = []
+    total_rows = len(df)
+    for column in df.columns:
+        col_data = df[column]
+        summary = {
+            'name': column,
+            'inferred_type': str(col_data.dtype),
+            'non_null_count': int(col_data.count()),  # Convert to Python int
+            'null_count': int(col_data.isnull().sum()),  # Convert to Python int
+            'unique_values': int(col_data.nunique()),  # Convert to Python int
+            'sample_values': col_data.dropna().head(5).tolist() if not col_data.empty else [],
+            'is_numeric': np.issubdtype(col_data.dtype, np.number)
+        }
+        if summary['is_numeric']:
+            summary.update({
+                'min': float(col_data.min()) if pd.notna(col_data.min()) else None,
+                'max': float(col_data.max()) if pd.notna(col_data.max()) else None,
+                'mean': float(col_data.mean()) if pd.notna(col_data.mean()) else None
+            })
+        column_summaries.append(summary)
 
+    # Create a prompt for the AI to generate a dynamic SQL schema
+    prompt = f"""Given the following dataset summary, generate a dynamic SQL CREATE TABLE schema. 
+    Use the following rules to infer SQL data types:
+    - If inferred_type is 'int64' or sample_values contain only integers, use INTEGER.
+    - If inferred_type is 'float64' or sample_values contain decimals, use REAL.
+    - If 'date' is in the column name or sample_values match date patterns (e.g., YYYY-MM-DD), use DATE.
+    - Otherwise, use TEXT.
+    Suggest nullability (NOT NULL where non_null_count equals total rows: {total_rows}), 
+    primary keys (unique column with no nulls and low unique_values relative to rows), 
+    and UNIQUE constraints where unique_values approach total rows. 
+    List columns first, followed by constraints (e.g., PRIMARY KEY, UNIQUE) on separate lines if needed.
+    Do not include foreign keys or indexes unless explicitly suggested by the data.
+    Return only the raw SQL code without any Markdown formatting (e.g., no ```sql or ```).
+
+    Dataset Summary:
+    {json.dumps(column_summaries, indent=2)}
+
+    Return the schema as a string in SQL format, e.g.:
+    CREATE TABLE table_name (
+        column1 DATA_TYPE CONSTRAINTS,
+        column2 DATA_TYPE CONSTRAINTS,
+        ...
+        [CONSTRAINT constraint_name PRIMARY KEY (column)]
+    );"""
+
+    # Generate schema using Gemini model
+    response = model.generate_content(prompt)
+    ai_generated_schema = response.text.strip() if response else None
+    logger.debug(f"Raw AI-generated schema: {ai_generated_schema}")
+
+    if not ai_generated_schema:
+        # Fallback to basic schema generation if AI fails
+        table_name = 'dataset'
+        schema = [f"CREATE TABLE {table_name} ("]
+        schema.append("    id INTEGER PRIMARY KEY AUTOINCREMENT,")
+
+        dtype_mapping = {
+            'object': 'TEXT',
+            'int64': 'INTEGER',
+            'float64': 'REAL',
+            'datetime64[ns]': 'DATE'
+        }
+
+        quoted_columns = [f'"{col}"' for col in df.columns]
+        for column in df.columns:
+            dtype = str(df[column].dtype)
+            sql_type = dtype_mapping.get(dtype, 'TEXT')
+            if 'date' in column.lower():
+                sql_type = 'DATE'
+            null_constraint = ' NOT NULL' if df[column].count() == len(df) else ''
+            schema.append(f'    "{column}" {sql_type}{null_constraint},')
+        
+        schema[-1] = schema[-1].rstrip(',')
+        schema.append(");")
+        ai_generated_schema = '\n'.join(schema)
+        logger.warning("Fell back to basic schema generation due to AI failure.")
+    else:
+        # Clean Markdown syntax if present
+        ai_generated_schema = re.sub(r'^```(?:sql)?\s*|\s*```$', '', ai_generated_schema, flags=re.MULTILINE)
+        # Ensure the schema ends with a semicolon
+        if not ai_generated_schema.endswith(';'):
+            ai_generated_schema += ';'
+        # Post-process to ensure valid schema
+        lines = ai_generated_schema.split('\n')
+        if len(lines) < 3 or not lines[1].strip():  # Minimum: CREATE, column, )
+            logger.error(f"Invalid schema structure: {ai_generated_schema}")
+            raise ValueError("AI-generated schema is malformed.")
+        processed_lines = [lines[0]]  # Keep the CREATE TABLE line
+        for line in lines[1:-1]:  # Process all lines except the last (closing parenthesis)
+            if not line.strip():
+                continue
+            parts = line.split()
+            if len(parts) < 2 or parts[0].upper() in ['PRIMARY', 'UNIQUE', 'CONSTRAINT']:  # Skip constraint lines
+                processed_lines.append(line)
+                continue
+            column_name = parts[0].replace('"', '')
+            if column_name not in df.columns:
+                logger.warning(f"Skipping invalid column name: {column_name}")
+                continue
+            sql_type = parts[1]
+            # Adjust types based on column name and data
+            if 'age' in column_name.lower() or 'score' in column_name.lower():
+                if any(str(val).replace('.', '').isdigit() for val in df[column_name].dropna().head()):
+                    sql_type = 'INTEGER' if all(str(val).isdigit() for val in df[column_name].dropna().head()) else 'REAL'
+            elif 'date' in column_name.lower():
+                sql_type = 'DATE'
+            null_constraint = ' NOT NULL' if df[column_name].count() == len(df) else ''
+            processed_lines.append(f'    "{column_name}" {sql_type}{null_constraint},')
+        # Ensure at least one column is present and add closing parenthesis
+        if not any(line.strip().startswith('    "') for line in processed_lines[1:]):
+            processed_lines.append('    dummy TEXT')
+        processed_lines.append(');')
+        ai_generated_schema = '\n'.join(processed_lines)
+        logger.debug(f"Processed schema: {ai_generated_schema}")
+
+    # Execute the schema and insert data
     db_path = os.path.join(BASE_DIR, 'dataset.db')
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    
+    # Extract table name from the schema
+    table_name_match = re.search(r'CREATE TABLE (\w+)', ai_generated_schema)
+    table_name = table_name_match.group(1) if table_name_match else 'dataset'
     cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
-    cursor.execute(sql_schema)
+    cursor.executescript(ai_generated_schema)
 
+    # Prepare data for insertion
+    quoted_columns = [f'"{col}"' for col in df.columns]
     placeholders = ','.join(['?' for _ in df.columns])
     columns = ','.join(quoted_columns)
     insert_query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
     logger.debug(f"Insert query: {insert_query}")
 
+    # Handle date columns and convert data
     if any('date' in col.lower() for col in df.columns):
         for col in df.columns:
             if 'date' in col.lower():
@@ -202,8 +306,7 @@ def generate_sql_schema(filepath):
     finally:
         conn.close()
 
-    return sql_schema
-
+    return ai_generated_schema
 def query_dataset(query, filename, vector_db_folder='vector_db'):
     try:
         # Load the precomputed vector store
