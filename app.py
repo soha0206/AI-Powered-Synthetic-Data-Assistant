@@ -539,5 +539,6 @@ def confirm_generate():
     # This route is now redundant since generation is handled in /generate
     return redirect(url_for('generate_dataset'))
 
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    app.run(host='0.0.0.0', port=3000)
