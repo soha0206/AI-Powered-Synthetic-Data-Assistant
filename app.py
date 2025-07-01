@@ -44,11 +44,11 @@ genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 logger.debug("Gemini model configured successfully")
 
-# Initialize SentenceTransformer for embeddings - Using a very lightweight model
+# Initialize SentenceTransformer for embeddings - Lightweight open-source model
 embedder = SentenceTransformer('paraphrase-MiniLM-L3-v2')  # ~30-40 MB
 
-# Load Hugging Face model locally - Using a very lightweight model
-text_generator = pipeline("text-generation", model="tiny-gpt2")  # ~10-20 MB
+# Load Hugging Face model locally - Lightweight open-source model for causal LM
+text_generator = pipeline("text-generation", model="distilgpt2")  # ~300-400 MB
 
 # Initialize Faker
 fake = Faker()
@@ -106,8 +106,8 @@ def profile_dataset(filepath):
     issues_text = " ".join(issues)
     if issues_text:
         prompt = f"Given the following data quality issues in a dataset: {issues_text} Suggest specific improvements to address these issues, including handling non-numeric values, missing values, duplicates, inconsistent casing, and invalid date formats."
-        response = model.generate_content(f"Provide a concise suggestion based on: {issues_text}")
-        suggestions = response.text if response else "No suggestions due to API error."
+        response = text_generator(prompt, max_new_tokens=100)[0]['generated_text']
+        suggestions = response if response else "No suggestions due to model error."
     else:
         suggestions = "No data quality issues detected. The dataset appears clean."
 
@@ -201,9 +201,9 @@ def generate_sql_schema(filepath):
         [CONSTRAINT constraint_name PRIMARY KEY (column)]
     );"""
 
-    # Generate schema using Gemini model
-    response = model.generate_content(prompt)
-    ai_generated_schema = response.text.strip() if response else None
+    # Generate schema using local text model
+    response = text_generator(prompt, max_new_tokens=200)[0]['generated_text']
+    ai_generated_schema = response.strip() if response else None
     logger.debug(f"Raw AI-generated schema: {ai_generated_schema}")
 
     if not ai_generated_schema:
@@ -231,7 +231,7 @@ def generate_sql_schema(filepath):
         schema[-1] = schema[-1].rstrip(',')
         schema.append(");")
         ai_generated_schema = '\n'.join(schema)
-        logger.warning("Fell back to basic schema generation due to AI failure.")
+        logger.warning("Fell back to basic schema generation due to model failure.")
     else:
         # Clean Markdown syntax if present
         ai_generated_schema = re.sub(r'^```(?:sql)?\s*|\s*```$', '', ai_generated_schema, flags=re.MULTILINE)
@@ -340,7 +340,7 @@ def query_dataset(query, filename, vector_db_folder='vector_db'):
         context_text = "\n".join(context) if context else "No relevant data found."
         logger.debug(f"Selected context length: {len(context_text)} characters")
 
-        # Generate response based on all column data
+        # Generate response using Gemini API
         prompt = f"Answer the query '{query}' based *exclusively* on the following context, which includes all columns of the dataset. Do not invent data outside this context, and provide a precise response using exact values where available:\n\n{context_text}"
         response = model.generate_content(prompt)
         answer = response.text if response else "Oops! I couldn't generate a response due to an API error or insufficient context."
