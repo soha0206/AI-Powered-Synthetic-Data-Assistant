@@ -8,3 +8,4 @@ transformers
 torch
 jinja2
 faker
+gunicorn
