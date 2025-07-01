@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generated Dataset</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding-top: 20px; }
+        .container { max-width: 800px; }
+        .card { margin-bottom: 20px; }
+        .table-responsive { max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">Generated Dataset</h1>
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Generated File: {{ filename }}</h5>
+                {% if message %}
+                <div class="alert alert-{{ message_type }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endif %}
+                <h6>Preview</h6>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                {% if preview and preview|length > 0 %}
+                                {% for key in preview|first|list %}
+                                <th>{{ key }}</th>
+                                {% endfor %}
+                                {% else %}
+                                <th>No data available</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in preview %}
+                            <tr>
+                                {% for value in row.values() %}
+                                <td>{{ value }}</td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                            {% if not preview or preview|length == 0 %}
+                            <tr><td colspan="100%">No preview data available</td></tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+                <a href="/download/{{ filename }}" class="btn btn-primary mt-3">Download Generated File</a>
+                <a href="/generate" class="btn btn-secondary mt-3">Generate Another</a>
+                <a href="/" class="btn btn-secondary mt-3">Back to Home</a>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

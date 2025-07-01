@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Task Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f0f4f8, #d9e2ec);
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #333;
+        }
+        .container {
+            background: #ffffff;
+            padding: 2rem 3rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 90%;
+            max-width: 500px;
+            animation: fadeIn 0.5s ease-in;
+        }
+        h1 {
+            color: #2c3e50;
+            font-size: 2.5rem;
+            margin-bottom: 1.5rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 25px;
+            margin: 10px;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 25px;
+            transition: transform 0.3s, background-color 0.3s;
+            font-weight: bold;
+        }
+        .btn:hover {
+            background-color: #2980b9;
+            transform: scale(1.05);
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Task Dashboard</h1>
+        <a href="{{ url_for('upload_file') }}" class="btn">Upload Dataset</a>
+        <a href="{{ url_for('generate_dataset') }}" class="btn">Generate Synthetic Data</a>
+    </div>
+</body>
+</html>

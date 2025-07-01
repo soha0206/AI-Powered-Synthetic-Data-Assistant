@@ -1,0 +1,10 @@
+flask
+pandas
+numpy
+google-generativeai
+sentence-transformers
+faiss-cpu
+transformers
+torch
+jinja2
+faker
