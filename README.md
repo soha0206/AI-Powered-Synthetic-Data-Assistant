@@ -1,1 +1,1 @@
-Refactored login handler and added error check
+Refactored login handler and added error checks
